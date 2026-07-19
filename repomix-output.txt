@@ -1,0 +1,560 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+================================================================
+File Summary
+================================================================
+
+Purpose:
+--------
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+
+File Format:
+------------
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Multiple file entries, each consisting of:
+  a. A separator line (================)
+  b. The file path (File: path/to/file)
+  c. Another separator line
+  d. The full contents of the file
+  e. A blank line
+
+Usage Guidelines:
+-----------------
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+
+Notes:
+------
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+
+Additional Info:
+----------------
+
+================================================================
+Directory Structure
+================================================================
+index.html
+manifest.json
+script.js
+service-worker.js
+styles.css
+
+================================================================
+Files
+================================================================
+
+================
+File: index.html
+================
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phonics Speed Challenge</title>
+    <link rel="manifest" href="manifest.json">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container d-flex flex-column justify-content-center min-vh-100">
+        <div id="game-container" class="text-center">
+            <h1 class="mb-4">Phonics Speed Challenge</h1>
+            <p class="mb-3">Wrong Answers: <span id="wrong-count">0</span></p>
+            <div id="progress-bar" class="progress mx-auto mb-4" style="width: 200px; height: 20px;">
+                <div id="progress-fill" class="progress-bar bg-success" role="progressbar" style="width: 100%;"></div>
+            </div>
+            <div id="options" class="mb-4 mx-auto" style="max-width: 50vw;"></div>
+            <button id="start-btn" class="btn btn-primary btn-lg">Start Game</button>
+            <div id="correct-answer" class="mt-4"></div>
+        </div>
+        <div id="game-over"
+            class="position-fixed top-50 start-50 translate-middle bg-white p-4 border border-2 border-dark text-center"
+            style="display: none;">
+            <h2>Game Over</h2>
+            <p id="wrong-count-display"></p>
+            <p id="total-time-display"></p>
+            <button id="play-again" class="btn btn-primary">Play Again</button>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>
+
+================
+File: manifest.json
+================
+{
+  "name": "Phonics Speed Challenge",
+  "short_name": "Phonics Speed",
+  "description": "A fun game to teach kids letters and phonics!",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#f0f0f0",
+  "theme_color": "#4caf50",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+
+================
+File: script.js
+================
+const letters = "abcdefghijklmnopqrstuvwxyz".split("");
+let upcomingQuestions = [...letters];
+let wrongCount = 0;
+let totalTime = 0;
+let consecutiveTimeouts = 0;
+let currentLetter = "";
+let timer;
+let questionStartTime;
+let isRoundActive = false;
+
+const startBtn = document.getElementById("start-btn");
+const optionsDiv = document.getElementById("options");
+const progressFill = document.getElementById("progress-fill");
+const wrongCountSpan = document.getElementById("wrong-count");
+const correctAnswerDiv = document.getElementById("correct-answer");
+const gameOverDiv = document.getElementById("game-over");
+const playAgainBtn = document.getElementById("play-again");
+
+// Audio setup
+const sounds = {
+  whichLetterSays: new Audio("whichLetterSays.mp3"),
+  wrong: new Audio("buzzer.mp3"),
+  says: new Audio("says.mp3"),
+  letterNames: {},
+  letterSounds: {},
+};
+letters.forEach((letter) => {
+  sounds.letterNames[letter] = new Audio(`${letter}-name.mp3`);
+  sounds.letterSounds[letter] = new Audio(`${letter}-sound.mp3`);
+});
+
+function shuffle(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
+function playSequentialAudio(audioArray, callback) {
+  let i = 0;
+  function playNext() {
+    if (i < audioArray.length) {
+      const audio = audioArray[i];
+      audio.currentTime = 0;
+      audio.play().catch((err) => {
+        console.error("Audio playback failed:", err);
+        audio.onended = null;
+        i++;
+        playNext();
+      });
+      audio.onended = () => {
+        audio.onended = null;
+        i++;
+        playNext();
+      };
+    } else if (callback) {
+      console.log("Audio sequence complete, running callback");
+      callback();
+    }
+  }
+  playNext();
+}
+
+function formatTime(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+  return minutes > 0
+    ? `${minutes} minute${
+        minutes !== 1 ? "s" : ""
+      } and ${remainingSeconds} second${remainingSeconds !== 1 ? "s" : ""}`
+    : `${remainingSeconds} second${remainingSeconds !== 1 ? "s" : ""}`;
+}
+
+function showGameOver() {
+  document.getElementById(
+    "wrong-count-display"
+  ).textContent = `Wrong Answers: ${wrongCount}`;
+  document.getElementById(
+    "total-time-display"
+  ).textContent = `Total Response Time: ${formatTime(totalTime)}`;
+  gameOverDiv.style.display = "block";
+  isRoundActive = false;
+}
+
+function stopAllSounds() {
+  sounds.whichLetterSays.pause();
+  sounds.wrong.pause();
+  sounds.says.pause();
+  for (let letter in sounds.letterNames) {
+    sounds.letterNames[letter].pause();
+    sounds.letterNames[letter].currentTime = 0;
+  }
+  for (let letter in sounds.letterSounds) {
+    sounds.letterSounds[letter].pause();
+    sounds.letterSounds[letter].currentTime = 0;
+  }
+}
+
+function startRound() {
+  if (isRoundActive) return;
+  isRoundActive = true;
+  clearTimeout(timer);
+  progressFill.style.width = "100%";
+  progressFill.style.transition = "none";
+  if (upcomingQuestions.length === 0) {
+    showGameOver();
+    return;
+  }
+  currentLetter = upcomingQuestions.shift();
+  playSequentialAudio(
+    [sounds.whichLetterSays, sounds.letterSounds[currentLetter]],
+    () => {
+      questionStartTime = Date.now();
+      let options = [currentLetter];
+      while (options.length < 4) {
+        const randomLetter =
+          letters[Math.floor(Math.random() * letters.length)];
+        if (!options.includes(randomLetter)) options.push(randomLetter);
+      }
+      shuffle(options);
+      optionsDiv.innerHTML = `
+          <div class="row g-3">
+              <div class="col-2"></div>
+              <div class="col-3 option" onclick="checkAnswer('${
+                options[0]
+              }')">${options[0].toUpperCase()}</div>
+              <div class="col-2"></div>
+              <div class="col-3 option" onclick="checkAnswer('${
+                options[1]
+              }')">${options[1].toUpperCase()}</div>
+              <div class="col-2"></div>
+          </div>
+          <div class="row g-3">
+              <div class="col-2"></div>
+              <div class="col-3 option" onclick="checkAnswer('${
+                options[2]
+              }')">${options[2].toUpperCase()}</div>
+              <div class="col-2"></div>
+              <div class="col-3 option" onclick="checkAnswer('${
+                options[3]
+              }')">${options[3].toUpperCase()}</div>
+              <div class="col-2"></div>
+          </div>
+      `;
+      progressFill.style.transition = "width 4s linear";
+      progressFill.style.width = "0%";
+      timer = setTimeout(() => handleWrongAnswer(true), 4000);
+    }
+  );
+}
+
+function checkAnswer(selected) {
+  if (!isRoundActive) return;
+  clearTimeout(timer);
+  const timeTaken = Math.min((Date.now() - questionStartTime) / 1000, 4);
+  totalTime += timeTaken;
+  progressFill.style.transition = "none"; // Stop animation
+  optionsDiv.innerHTML = "";
+  correctAnswerDiv.textContent = currentLetter.toUpperCase();
+  correctAnswerDiv.style.display = "block";
+  correctAnswerDiv.classList.add("flash");
+  if (selected === currentLetter) {
+    consecutiveTimeouts = 0;
+    sounds.letterNames[selected].play();
+    setTimeout(() => {
+      correctAnswerDiv.style.display = "none";
+      correctAnswerDiv.classList.remove("flash");
+      isRoundActive = false; // Reset here after correct answer
+      startRound();
+    }, 1000);
+  } else {
+    handleWrongAnswer(false); // Keep isRoundActive true until handled
+  }
+}
+
+function handleWrongAnswer(isTimeout = false) {
+  if (!isRoundActive) return;
+  if (isTimeout) {
+    consecutiveTimeouts++;
+    if (consecutiveTimeouts >= 3) {
+      showGameOver();
+      return;
+    }
+  }
+  const timeTaken = isTimeout
+    ? 4
+    : Math.min((Date.now() - questionStartTime) / 1000, 4);
+  totalTime += timeTaken;
+  if (!isTimeout) wrongCount++;
+  wrongCountSpan.textContent = wrongCount;
+  progressFill.style.transition = "none"; // Stop animation
+  optionsDiv.innerHTML = "";
+  correctAnswerDiv.textContent = currentLetter.toUpperCase();
+  correctAnswerDiv.style.display = "block";
+  correctAnswerDiv.classList.add("flash");
+  playSequentialAudio(
+    [
+      sounds.wrong,
+      sounds.letterNames[currentLetter],
+      sounds.says,
+      sounds.letterSounds[currentLetter],
+    ],
+    () => {
+      console.log("Wrong answer feedback complete, proceeding");
+      correctAnswerDiv.style.display = "none";
+      correctAnswerDiv.classList.remove("flash");
+      if (upcomingQuestions.length > 0) {
+        upcomingQuestions.splice(1, 0, currentLetter);
+      } else {
+        upcomingQuestions.push(currentLetter);
+      }
+      isRoundActive = false; // Reset here after wrong answer
+      startRound();
+    }
+  );
+}
+
+startBtn.onclick = () => {
+  startBtn.style.display = "none";
+  shuffle(upcomingQuestions);
+  startRound();
+};
+
+playAgainBtn.onclick = () => {
+  gameOverDiv.style.display = "none";
+  upcomingQuestions = [...letters];
+  wrongCount = 0;
+  totalTime = 0;
+  consecutiveTimeouts = 0;
+  wrongCountSpan.textContent = wrongCount;
+  startBtn.style.display = "block";
+  stopAllSounds();
+  shuffle(upcomingQuestions);
+};
+
+// Service Worker Registration
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("/service-worker.js")
+      .then((reg) => console.log("Service Worker registered:", reg))
+      .catch((err) => console.log("Service Worker registration failed:", err));
+  });
+}
+
+// PWA Install Prompt
+let deferredPrompt;
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  setTimeout(() => {
+    if (
+      deferredPrompt &&
+      confirm("Install Phonics Speed Challenge for offline play?")
+    ) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then((choiceResult) => {
+        if (choiceResult.outcome === "accepted") {
+          console.log("User installed the PWA");
+        }
+        deferredPrompt = null;
+      });
+    }
+  }, 3000);
+});
+
+================
+File: service-worker.js
+================
+const CACHE_NAME = "phonics-quiz-v1";
+const FILES_TO_CACHE = [
+  "/index.html",
+  "/manifest.json",
+  "/whichLetterSays.mp3",
+  "/bell.mp3",
+  "/buzzer.mp3",
+  "/says.mp3",
+  "/victory1.mp3",
+  "/victory2.mp3",
+  "/a-name.mp3",
+  "/b-name.mp3",
+  "/c-name.mp3",
+  "/d-name.mp3",
+  "/e-name.mp3",
+  "/f-name.mp3",
+  "/g-name.mp3",
+  "/h-name.mp3",
+  "/i-name.mp3",
+  "/j-name.mp3",
+  "/k-name.mp3",
+  "/l-name.mp3",
+  "/m-name.mp3",
+  "/n-name.mp3",
+  "/o-name.mp3",
+  "/p-name.mp3",
+  "/q-name.mp3",
+  "/r-name.mp3",
+  "/s-name.mp3",
+  "/t-name.mp3",
+  "/u-name.mp3",
+  "/v-name.mp3",
+  "/w-name.mp3",
+  "/x-name.mp3",
+  "/y-name.mp3",
+  "/z-name.mp3",
+  "/a-sound.mp3",
+  "/b-sound.mp3",
+  "/c-sound.mp3",
+  "/d-sound.mp3",
+  "/e-sound.mp3",
+  "/f-sound.mp3",
+  "/g-sound.mp3",
+  "/h-sound.mp3",
+  "/i-sound.mp3",
+  "/j-sound.mp3",
+  "/k-sound.mp3",
+  "/l-sound.mp3",
+  "/m-sound.mp3",
+  "/n-sound.mp3",
+  "/o-sound.mp3",
+  "/p-sound.mp3",
+  "/q-sound.mp3",
+  "/r-sound.mp3",
+  "/s-sound.mp3",
+  "/t-sound.mp3",
+  "/u-sound.mp3",
+  "/v-sound.mp3",
+  "/w-sound.mp3",
+  "/x-sound.mp3",
+  "/y-sound.mp3",
+  "/z-sound.mp3",
+];
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      console.log("Caching files");
+      return cache.addAll(FILES_TO_CACHE);
+    })
+  );
+});
+
+self.addEventListener("fetch", (event) => {
+  event.respondWith(
+    caches.match(event.request).then((response) => {
+      return response || fetch(event.request);
+    })
+  );
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((name) => {
+          if (name !== CACHE_NAME) {
+            return caches.delete(name);
+          }
+        })
+      );
+    })
+  );
+});
+
+================
+File: styles.css
+================
+body {
+    background-color: #f0f0f0;
+    font-family: Arial, sans-serif;
+}
+
+.option {
+    width: 100%;
+    /* Full width of col-3 */
+    height: 25vw;
+    /* Scales with screen width */
+    min-width: 80px;
+    min-height: 80px;
+    max-width: 150px;
+    max-height: 150px;
+    font-size: 10vw;
+    /* Large, scalable font */
+    min-font-size: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #fff;
+    border: 3px solid #000;
+    border-radius: 10px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.option:hover {
+    background-color: #e0e0e0;
+}
+
+#correct-answer {
+    font-size: 72px;
+    display: none;
+}
+
+.flash {
+    animation: flash 0.5s infinite alternate;
+}
+
+@keyframes flash {
+    from {
+        background-color: #fff;
+    }
+
+    to {
+        background-color: #ffd700;
+    }
+}
+
+@media (max-width: 600px) {
+    .option {
+        font-size: 8vw;
+        /* Adjust font for mobile */
+    }
+
+    #progress-bar {
+        width: 150px;
+    }
+}
+
+
+
+================================================================
+End of Codebase
+================================================================
